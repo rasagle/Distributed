@@ -1,0 +1,26 @@
+<html>
+    <head>
+        <meta http-equiv="refresh" content="2;url = /" />
+    </head>
+    <body>
+		{% if redirect_code == 'login' %}
+			<p>You have successfully logged in, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'register'%}
+			<p>You have succesfully registered, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'invalid_user' %}
+			<p>This user does not exist, you will be redirected in 2 seconds...</p>
+		{% elif redirect_code == 'logout' %}
+			<p>You have succesfully logged out, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'remove' %}
+			<p>You have succesfully removed your account, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'find_people' %}
+			<p>You have successfully followed this person, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'no more people' %}
+			<p>There are currently no users that you have not followed, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'unfollow'%}
+			<p>You have successfully unfollowed this person, redirecting in 2 seconds...</p>
+		{% elif redirect_code == 'no_followed'%}
+			<p>You did not follow anyone, redirecting in 2 seconds...</p>
+		{% endif %}
+    </body>
+</html>

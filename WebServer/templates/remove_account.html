@@ -1,0 +1,16 @@
+<html>
+    <head>
+    </head>
+    <body>
+	<p>If you are sure to delete your account type, "I am sure"</p>
+        <form action="" method = "POST">
+			<input type="text" name = "verify" placeholder ="Are you sure?"/>
+			<input type="submit" name = "Delete Forever" />
+		</form>
+	{% if message %}
+		<p><strong>Error:</strong>{{message}}</p>
+	{% endif %}
+    </body>
+	
+	<a href="/">Go back</a>
+</html>

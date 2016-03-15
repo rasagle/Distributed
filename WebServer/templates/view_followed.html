@@ -1,0 +1,16 @@
+<html>
+<head>
+</head>
+<body>
+	<form action = "/view_followed" method="POST">Choose a person's profile to view<br/>
+		<select name='username'>
+		{% for user in user_list%}
+			<option value={{user}}>{{user}}</option> </br>
+		{% endfor %}
+		</select>
+		<input type = "submit" value = "View">
+	</form>
+	
+	<a href="/">Go back</a>
+</body>
+</html>

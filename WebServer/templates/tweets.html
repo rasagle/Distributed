@@ -1,0 +1,26 @@
+<html>
+<head>
+</head>
+<body>
+	<p><strong>{{username}}'s Tweets</strong></p> </br></br>
+	{% if not available %}
+		<p>There are no tweets</p>
+	{% endif %}
+	
+	{% for line in tweets%}
+		<p>{{line}}</p>
+		<hr>
+	{% endfor %}
+	</br>
+	{% if isUser %}
+		<form action="" method = "POST">
+			<textarea name="tweet" cols = 50 rows = 10> </textarea> </br>
+			<input type="submit" value="Comment" />
+		</form>
+	{% endif %}
+	
+	<a href="/">Go back</a>
+
+</body>
+
+</html>
