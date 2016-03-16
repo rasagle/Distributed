@@ -63,14 +63,14 @@ int main(int argc, char **argv) {
         //    we are talking to.
         //    Last arg is where to put the size of the sockaddr if
         //    we asked for one
-	fprintf(stderr, "Ready to connect.\n");
+		fprintf(stderr, "Ready to connect.\n");
         if ((connfd = accept(listenfd, (SA *) NULL, NULL)) == -1) {
             perror("accept failed");
             exit(4);
-	}
-	fprintf(stderr, "Connected\n");
+		}
+		fprintf(stderr, "Connected\n");
 		char temp[MAXLINE];
-		
+
         // We had a connection.  Do whatever our task is.
 		recv(connfd, buff, sizeof(buff), 0);
 		std::string request = buff;
@@ -80,6 +80,8 @@ int main(int argc, char **argv) {
 		//send(connfd, buff, strlen(buff), 0);
         // 6. Close the connection with the current client and go back
         //    for another.
+		memset(buff, 0, sizeof(buff));
+		memset(temp, 0, sizeof(temp));
         close(connfd);
     }
 }

@@ -1,6 +1,15 @@
 #include "backendmanager.h"
 using namespace std;
 
+void addUserFiles(string& username){
+	ofstream ofs( username + "_messages.txt" );
+	ofstream ofs1( username + "_followers.txt" );
+	ofstream ofs2( username + "_followed.txt" );
+	ofs.close();
+	ofs1.close();
+	ofs2.close();
+}
+
 string registerUser(string& username, string& password){
 	
 	ifstream ifs( username + ".txt" );
@@ -11,6 +20,7 @@ string registerUser(string& username, string& password){
 		ofstream ofs1( "userbase.txt", ofstream::app );
 		ofs1 << username + "\n";
 		ofs1.close();
+		addUserFiles(username);
 		return("Register successful");
 	}
 	else{
@@ -18,7 +28,20 @@ string registerUser(string& username, string& password){
 	}
 }
 
-
+string loginUser(string& username, string& password){
+	
+	ifstream ifs( username + ".txt" );
+	if(!ifs)
+		return ("The user is not registered");
+	else{
+		string user, pass;
+		ifs >> user >> pass;
+		if( user == username && pass == password )
+			return ("Login successful");
+		else
+			return ("Invalid credentials");
+	}
+}
 
 string requestHandler(string& message){
 	
@@ -33,5 +56,13 @@ string requestHandler(string& message){
 		string user = info.substr(0, index);
 		string pass = info.substr(index+1, info.size());
 		return registerUser(user, pass);
+	}
+	else if( request == "login" ){
+		string info;
+		iss >> info;
+		int index = info.find('*');
+		string user = info.substr(0, index);
+		string pass = info.substr(index+1, info.size());
+		return loginUser(user, pass);
 	}
 }

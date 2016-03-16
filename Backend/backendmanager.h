@@ -24,7 +24,9 @@
 #define PORT_NUM  13002
 #define DELIMETER 178
 
+void addUserFiles(std::string& username);
 std::string registerUser(std::string& username, std::string& password);
+std::string loginUser(std::string& username, std::string& password);
 std::string requestHandler(std::string& message);
 	
 
