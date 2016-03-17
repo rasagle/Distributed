@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
         // We had a connection.  Do whatever our task is.
 		recv(connfd, buff, sizeof(buff), 0);
 		std::string request = buff;
-		std::string response = requestHandler(request);
+		std::string response = requestHandler(request, connfd);
 		strcpy(temp, response.c_str());
 		send(connfd, temp, strlen(temp), 0);
 		//send(connfd, buff, strlen(buff), 0);
