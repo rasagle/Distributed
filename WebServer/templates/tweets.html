@@ -14,7 +14,7 @@
 	</br>
 	{% if isUser %}
 		<form action="" method = "POST">
-			<textarea name="tweet" cols = 50 rows = 10> </textarea> </br>
+			<textarea name="tweet" cols = 50 rows = 10 placeholder="Tweet here, 150 character limit" maxlength="150" required></textarea>  </br>
 			<input type="submit" value="Comment" />
 		</form>
 	{% endif %}

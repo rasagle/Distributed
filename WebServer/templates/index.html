@@ -18,8 +18,16 @@
 	<a href="/tweets">View your tweets</a> </br>
 	<a href="/find_people">Find people to follow</a> </br>
 	<a href="/unfollow">Unfollow someone</a> </br>
-	<a href="/view_followed">View people you have followed</a>
-{% endif %}
+	<a href="/view_followed">View people you have followed</a> </br>
+	</br>
+
+        <h4>15 most recent tweets from you and your followers </h4> </br>
+
+	{% for line in tweets%}
+	        <p>{{line}}</p>
+	        <hr>
+	{% endfor %}
+	{% endif %}
 </body>
 
 </html>

@@ -17,6 +17,7 @@
 #include <vector>
 #include <set>
 #include <cstdlib>
+#include <map>
 
 #define MAXLINE   4096  // max text line length
 #define BUFFSIZE  8192    // buffer size for reads and writes
@@ -36,8 +37,12 @@ void findPeople(const std::string& currentUser, const std::string& username);
 void getFollowNames(const std::string& username, int connfd);
 void unfollow(const std::string& username, const std::string& name);
 std::string checkUserExists(const std::string& username);
+void parseMessage(const std::string& username, std::vector<std::string>& vec);
 void displayTweets(const std::string& username, int connfd);
-void tweet(const std::string& username, const std::string& timestamp, const std::string& message, int connfd);
+void tweet(const std::string& username, const std::string& date, const std::string& time1, const std::string& message, int connfd);
+std::string numFollowers(const std::string& username);
+void parseMessage2(const std::string& username, std::map<std::string, std::string>& myMap);
+void aggregateFeed(const std::string& username, int connfd);
 std::string requestHandler(const std::string& message, int connfd);
 	
 
