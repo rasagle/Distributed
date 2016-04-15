@@ -1,7 +1,20 @@
 #include "backendmanager.h"
 using namespace std;
 
-void addUserFiles(const string& username){
+Manager::Manager(){
+	lock_guard<mutex> lck(userBaseMut);
+	lock_guard<mutex> lck1(mapMut);
+	ifstream ifs("userbase.txt");
+	string line;
+	while(getline(ifs, line)){
+		if(uMap.find(line) != uMap.end()){
+			uMap[line] = new Person(line);
+		}
+	}
+	ifs.close();
+}
+
+void Manager::addUserFiles(const string& username){
 	//Creates 4 user files
 	ofstream ofs( username + "_messages.txt" );
 	ofstream ofs1( username + "_followers.txt" );
@@ -11,8 +24,15 @@ void addUserFiles(const string& username){
 	ofs2.close();
 }
 
-string registerUser(const string& username, const string& password){
+string Manager::registerUser(const string& username, const string& password){
 	//Registers the user into the system
+	unique_lock<mutex> lck(mapMut);
+	if(uMap.find(username) == uMap.end()){
+		uMap[username] = new Person(username);
+	}
+	lck.unlock();
+	lock_guard<mutex> lck1(userBaseMut);
+	
 	ifstream ifs( username + ".txt" );
 	if(!ifs){
 		ofstream ofs( username + ".txt" );
@@ -29,8 +49,14 @@ string registerUser(const string& username, const string& password){
 	}
 }
 
-string loginUser(const string& username, const string& password){
+string Manager::loginUser(const string& username, const string& password){
 	//Logs the user into the system
+	unique_lock<mutex> lck(mapMut);
+	if(uMap.find(username) != uMap.end()){
+		lock_guard<mutex> lck(*uMap[username]->userMut);
+	}
+	lck.unlock();
+	
 	ifstream ifs( username + ".txt" );
 	if(!ifs)
 		return ("The user is not registered");
@@ -44,10 +70,10 @@ string loginUser(const string& username, const string& password){
 	}
 }
 
-void removeNameFromFile(const string& username, const string& filename){
+void Manager::removeNameFromFile(const string& username, const string& filename){
 	//Removes an instance of the word from a file
 	ifstream ifs(filename);
-	ofstream ofs("temp.txt");
+	ofstream ofs(username + "temp.txt");
 	string line;
 	while(getline(ifs,line)){
 		if(line != username)
@@ -56,29 +82,48 @@ void removeNameFromFile(const string& username, const string& filename){
 	ifs.close();
 	ofs.close();
 	remove(filename.c_str());
-	rename("temp.txt", filename.c_str());
+	string tempName = username + "temp.txt";
+	rename(tempName.c_str(), filename.c_str());
 }
 
-void removeFollowerInfo(const string& username){
+void Manager::removeFollowerInfo(const string& username){
 	//Goes into followers/followed files and removes the username
+	lock_guard<mutex> lck(mapMut);
+	
 	ifstream ifs(username + "_followed.txt");
 	string followedName;
 	//Goes into the follower's file and removes username
 	while(getline(ifs, followedName)){
+		unique_lock<mutex> lck2(*uMap[followedName]->followerMut);
 		removeNameFromFile(username, followedName + "_followers.txt");
+		lck2.unlock();
 	}
 	ifs.close();
 	//Goes into the followed file and removes username
 	ifstream ifs1(username + "_followed.txt");
 	string followerName;
 	while(getline(ifs1, followerName)){
+		unique_lock<mutex> lck3(*uMap[followerName]->followedMut);
 		removeNameFromFile(username, followerName + "_followed.txt");
+		lck3.unlock();
 	}
 	ifs1.close();
 }
 
-void removeAccount(const string& username){
+void Manager::removeAccount(const string& username){
 	//Removes all the user files and info from respective files
+	unique_lock<mutex> lck(mapMut);
+	lock(*uMap[username]->userMut, *uMap[username]->followedMut, *uMap[username]->followerMut, *uMap[username]->tweetMut, userBaseMut);
+	lock_guard<mutex> lck1(*uMap[username]->userMut, adopt_lock);
+	lock_guard<mutex> lck2(*uMap[username]->followedMut, adopt_lock);
+	lock_guard<mutex> lck3(*uMap[username]->followerMut, adopt_lock);
+	lock_guard<mutex> lck4(*uMap[username]->tweetMut, adopt_lock);
+	lock_guard<mutex> lck5(userBaseMut, adopt_lock);
+	delete uMap[username];
+	uMap[username] = nullptr;
+	uMap.erase(username);
+	lck.unlock();
+	
 	removeFollowerInfo(username);
 	remove((username + ".txt").c_str());
 	remove((username + "_followed.txt").c_str());
@@ -87,8 +132,10 @@ void removeAccount(const string& username){
 	removeNameFromFile(username, "userbase.txt");
 }
 
-void findEveryone(const string& username, int connfd){
-	//Finds everyone that the user 
+void Manager::findEveryone(const string& username, int connfd){
+	//Finds everyone that the user followed
+	unique_lock<mutex> lck(userBaseMut);
+	
 	ifstream ifs("userbase.txt");
 	string line;
 	set<string> mySet;
@@ -98,6 +145,10 @@ void findEveryone(const string& username, int connfd){
 			mySet.insert(line);
 	}
 	ifs.close();
+	lck.unlock();
+	unique_lock<mutex> lck1(mapMut);
+	unique_lock<mutex> lck2(*uMap[username]->followedMut);
+	lck1.unlock();
 	//removes everyone that the user already followed
 	ifstream ifs1(username + "_followed.txt");
 	string newLine;
@@ -105,6 +156,7 @@ void findEveryone(const string& username, int connfd){
 		mySet.erase(newLine);
 	}
 	ifs1.close();
+	lck2.unlock();
 	//Sends the information to socket
 	for(it = mySet.begin(); it != mySet.end(); ++it){
 		string line = *it + "~*~";
@@ -112,8 +164,14 @@ void findEveryone(const string& username, int connfd){
 	}
 }
 
-void findPeople(const string& currentUser, const string& username){
+void Manager::findPeople(const string& currentUser, const string& username){
 	//Adds people to corresponding files
+	unique_lock<mutex> lck(mapMut);
+	lock(*uMap[currentUser]->followedMut, *uMap[username]->followerMut);
+	lock_guard<mutex> lck1(*uMap[currentUser]->followedMut, adopt_lock);
+	lock_guard<mutex> lck2(*uMap[username]->followerMut, adopt_lock);
+	lck.unlock();
+	
 	ofstream ofs(currentUser + "_followed.txt", ofstream::app);
 	ofs << username + '\n';
 	ofs.close();
@@ -122,8 +180,12 @@ void findPeople(const string& currentUser, const string& username){
 	ofs1.close();
 }
 
-void getFollowNames(const string& username, int connfd){
+void Manager::getFollowNames(const string& username, int connfd){
 	//Sends name of people that the user have followed
+	unique_lock<mutex> lck(mapMut);
+	unique_lock<mutex> lck1(*uMap[username]->followedMut);
+	lck.unlock();
+	
 	ifstream ifs(username + "_followed.txt");
 	string line;
 	set<string> mySet;
@@ -132,6 +194,7 @@ void getFollowNames(const string& username, int connfd){
 		mySet.insert(line);
 	}
 	ifs.close();
+	lck1.unlock();
 	//Sends information to socket
 	for(it = mySet.begin(); it != mySet.end(); ++it){
 		string newLine = *it + "~*~";
@@ -139,22 +202,32 @@ void getFollowNames(const string& username, int connfd){
 	}
 }
 
-void unfollow(const string& username, const string& name){
+void Manager::unfollow(const string& username, const string& name){
 	//Unfollow one user, removes name from corresponding file
+	unique_lock<mutex> lck(mapMut);
+	lock(*uMap[username]->followedMut, *uMap[name]->followerMut);
+	lock_guard<mutex> lck1(*uMap[username]->followedMut, adopt_lock);
+	lock_guard<mutex> lck2(*uMap[name]->followerMut, adopt_lock);
+	lck.unlock();
+	
 	removeNameFromFile(name, username + "_followed.txt");
 	removeNameFromFile(username, name + "_followers.txt");
 }
 
-string checkUserExists(const string& username){
+string Manager::checkUserExists(const string& username){
 	//Checks to see if a user exists
-	ifstream ifs(username + "_messages.txt");
+	unique_lock<mutex> lck(mapMut);
+	lock_guard<mutex> lck1(*uMap[username]->userMut);
+	lck.unlock();
+	
+	ifstream ifs(username + ".txt");
 	if(!ifs)
 		return("Does not exist");
 	ifs.close();
 	return("Exists");
 }
 
-void parseMessage(const string& username, vector<string>& vec){
+void Manager::parseMessage(const string& username, vector<string>& vec){
 	//Parses user's message into separate strings and stores in a vector
 	ifstream ifs(username + "_messages.txt");
 	string line;
@@ -162,27 +235,18 @@ void parseMessage(const string& username, vector<string>& vec){
 		vec.push_back(line);
 	}
 	ifs.close();
-	/*
-	ostringstream ss;
-	ss << ifs.rdbuf();
-	string s = ss.str();
-	ifs.close();
-	char str[s.size()+1];
-	strcpy(str, s.c_str());
-	char * pch;
-	pch = strtok(str, "~*~");
-	while(pch != nullptr){
-		vec.push_back(pch);
-		pch = strtok(nullptr, "~*~");
-	}
-	*/
 }
 
-void displayTweets(const string& username, int connfd){
+void Manager::displayTweets(const string& username, int connfd){
 	//Goes through a vector and send each tweet to socket
+	unique_lock<mutex> lck(mapMut);
+	unique_lock<mutex> lck1(*uMap[username]->tweetMut);
+	lck.unlock();
+	
 	vector<string> vec;
 	vector<string>::reverse_iterator it;
 	parseMessage(username, vec);
+	lck1.unlock();
 	for(it = vec.rbegin(); it != vec.rend(); it++){
 		cout << *it << endl;
 		string line = *it + "~*~";
@@ -190,16 +254,25 @@ void displayTweets(const string& username, int connfd){
 	}
 }
 
-void tweet(const string& username, const string& date, const string& time1, const string& message, int connfd){
+void Manager::tweet(const string& username, const string& date, const string& time1, const string& message, int connfd){
 	//Stores tweet and also sends the tweets to the socket to be displayed
+	unique_lock<mutex> lck(mapMut);
+	unique_lock<mutex> lck1(*uMap[username]->tweetMut);
+	lck.unlock();
+	
 	ofstream ofs(username + "_messages.txt", ofstream::app);
 	ofs << date + " " + time1 + " -- " + message + "\n";
 	ofs.close();
+	lck1.unlock();
 	displayTweets(username, connfd);
 }
 
-string numFollowers(const string& username){
+string Manager::numFollowers(const string& username){
 	//Returns the number of followers that the user has
+	unique_lock<mutex> lck(mapMut);
+	lock_guard<mutex> lck1(*uMap[username]->followerMut);
+	lck.unlock();
+	
 	ifstream ifs(username + "_followers.txt");
 	string line;
 	int count = 0;
@@ -212,7 +285,7 @@ string numFollowers(const string& username){
 	return line;
 }
 
-void parseMessage2(const string& username, map<string, string>& myMap){
+void Manager::parseMessage2(const string& username, map<string, string>& myMap){
 	//Parses messages and stores in map
 	ifstream ifs(username + "_messages.txt");
 	string line;
@@ -220,33 +293,26 @@ void parseMessage2(const string& username, map<string, string>& myMap){
 		myMap[line] = username;
 	}
 	ifs.close();
-	/*
-	ostringstream ss;
-	ss << ifs.rdbuf();
-	string s = ss.str();
-	ifs.close();
-	char str[s.size()+1];
-	strcpy(str, s.c_str());
-	char * pch;
-	pch = strtok(str, "~*~");
-	while(pch != nullptr){
-		myMap[pch] = username;
-		pch = strtok(nullptr, "~*~");
-	}
-	*/
 }
 
-void aggregateFeed(const string& username, int connfd){
+void Manager::aggregateFeed(const string& username, int connfd){
 	//stores all messages in a map and sends the most recent 15 messages
+	unique_lock<mutex> lck(mapMut);
+	unique_lock<mutex> lck1(*uMap[username]->followedMut);
+	
 	map<string, string> myMap;
 	map<string, string>::reverse_iterator it;
 	ifstream ifs(username + "_followed.txt");
 	string line;
 	parseMessage2(username, myMap);
 	while(getline(ifs,line)){
+		unique_lock<mutex> lck2(*uMap[line]->tweetMut);
 		parseMessage2(line, myMap);
+		lck2.unlock();
 	}
 	ifs.close();
+	lck.unlock();
+	lck1.unlock();
 	//Sends the most recent 15 tweets to socket
 	int count = 0;
 	for(it = myMap.rbegin(); it != myMap.rend(); it++){
@@ -258,7 +324,26 @@ void aggregateFeed(const string& username, int connfd){
 	}	
 }
 
-string requestHandler(const string& message, int connfd){
+void Manager::connectServ(int connfd){
+	char buff[MAXLINE];
+	char temp[MAXLINE];
+
+	// We had a connection.  Do whatever our task is.
+	recv(connfd, buff, sizeof(buff), 0);
+	std::string request = buff;
+	//std::string response = requestHandler(request, connfd);
+	string response = this->requestHandler(request, connfd);
+	strcpy(temp, response.c_str());
+	send(connfd, temp, strlen(temp), 0);
+	//send(connfd, buff, strlen(buff), 0);
+	// 6. Close the connection with the current client and go back
+	//    for another.
+	memset(buff, 0, sizeof(buff));
+	memset(temp, 0, sizeof(temp));
+	close(connfd);
+}
+
+string Manager::requestHandler(const string& message, int connfd){
 	//This handles all the use cases
 	string request;
 	istringstream iss(message);
