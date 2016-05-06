@@ -6,16 +6,22 @@ import socket
 
 app = Flask(__name__)
 
+ports = [13002, 12002, 11002]
+
 def connectSocket(request):
         '''connects to the socket'''
    	s = socket.socket()         	# Create a socket object
 	host = "192.81.212.251" 	# Where do you want to connect
-	port = 13002                	# port to connect to
-
-	s.connect((host, port))
-	s.send(request.encode())
-	message = (s.recv(1024).decode("utf8"))
-	s.close                     	# Close the socket when done
+	#port = 13002                	# port to connect to
+        for port in ports:
+                try:
+                        s.connect((host, port))
+                        s.send(request.encode())
+                        message = (s.recv(1024).decode("utf8"))
+                        break
+                except:
+                        continue
+	s.close()                     	# Close the socket when done
 	return message	
 
 @app.route('/')
@@ -24,6 +30,7 @@ def index():
         username = None
         num_follower = ''
         tweets = []
+        
         if 'username' in session:
                 username = session['username']
                 num_follower = connectSocket("num_followers " + username)
@@ -37,7 +44,8 @@ def register():
         '''Registers the user into the system'''
         redirect_code = "register"
 	error = None
-        
+        if 'username' in session:
+                return redirect(url_for('index'))
         if request.method == 'POST':
 		reg_user = request.form['username']
 		reg_pass = request.form['password']
@@ -52,6 +60,8 @@ def login():
 	'''Login'''
 	redirect_code = "login"
 	error = None
+        if 'username' in session:
+                return redirect(url_for('index'))
 	if request.method == 'POST':
                 attempt_user = request.form['username']
 		attempt_pass = request.form['password']
@@ -69,6 +79,8 @@ def login():
 def logout():
 	'''Logs out of the system'''
 	redirect_code = "logout"
+	try: username = session['username']
+        except: return redirect(url_for('index'))
 	session.pop('username', None)
 	return render_template("redirect.html", redirect_code = redirect_code)
 
@@ -78,7 +90,7 @@ def remove_account():
 	error = None
 	redirect_code = "remove"
         try: username = session['username']
-        except: return render_template("index.html", message = None, num = 0, tweets = [])
+        except: return redirect(url_for('index'))
         if request.method == "POST":
 		errorMsg = request.form['verify']
 		if errorMsg == "I am sure":
@@ -94,19 +106,23 @@ def find_everyone(request):
         username = session['username']
         s = socket.socket()             
 	host = "192.81.212.251"         
-	port = 13002                
-	s.connect((host, port))
-	s.send(request.encode())
-        names = ""
-        for i in range(10):
-             message = s.recv(1024).decode("utf8")
-             if message != "": names += message
-             #print message
-        everyone = names.split('~*~')
-        for i in everyone:
-                print i
-        everyone.pop()
-        if not everyone: return ""
+	#port = 13002 
+        for port in ports:
+                try:
+		        s.connect((host, port))
+		        s.send(request.encode())
+                        s.settimeout(2)
+		        names = ""
+		        for i in range(10):
+		                message = s.recv(1024).decode("utf8")
+		                if message != "": names += message
+		                #print message
+		        everyone = names.split('~*~')
+		        everyone.pop()
+		        if not everyone: return ""
+			break
+		except:
+                        continue
         s.close()
         return everyone
 
@@ -115,7 +131,7 @@ def find_people():
         '''Utilizes find_everyone then allows user to follow the person'''
         redirect_code = "find_people"
         try: current_user = session['username']
-        except: return render_template("index.html", message = None, num = 0, tweets = [])
+        except: return redirect(url_for('index'))
 	userbase = find_everyone("find_everyone " + current_user)
 	if len(userbase) == 0:
 		redirect_code = "no more people"
@@ -132,7 +148,7 @@ def unfollow():
 	'''Unfollows a specified person'''
 	redirect_code = "unfollow"
 	try: username = session['username']
-        except: return render_template("index.html", message = None, num = 0, tweets = [])
+        except: return redirect(url_for('index'))
         everyone = find_everyone("get_unfollow_name " + username)
         if len(everyone) == 0:
 		redirect_code = "no_followed"
@@ -147,7 +163,7 @@ def unfollow():
 def view_followed():
 	'''Displays everyone that you have followed and you can choose to view their tweets'''
 	try: username = session['username']
-        except: return render_template("index.html", message = None, num = 0, tweets = [])
+        except: return redirect(url_for('index'))
         everyone = find_everyone("view_followed " + username)
         if len(everyone) == 0:
                 redirect_code = "no_followed"
@@ -167,7 +183,7 @@ def tweets(username = None):
 	if username == None:
 		isUser = True
 		try: username = session['username']
-                except: return render_template("index.html", message = None, num = 0, tweets = [])
+                except: return redirect(url_for('index'))
         
         message = connectSocket("check_user_exists " + username)
         if message == "Does not exist":

@@ -10,6 +10,7 @@
 #include <sys/socket.h>  // socket, AF_INET, SOCK_STREAM,
                          // bind, listen, accept
 #include <netinet/in.h>  // servaddr, INADDR_ANY, htons
+#include <arpa/inet.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -22,6 +23,7 @@
 #include <mutex>
 #include <unordered_map>
 #include "person.h"
+#include "replica.h"
 
 #define MAXLINE   4096  // max text line length
 #define BUFFSIZE  8192    // buffer size for reads and writes
@@ -29,14 +31,19 @@
 #define LISTENQ   1024  // 2nd argument to listen()
 #define PORT_NUM  13002
 #define DELIMETER 178
+
 class Manager{
 private:
 	std::mutex userBaseMut;
 	std::mutex mapMut;
 	std::unordered_map<std::string, Person*> uMap;
+	std::vector<Replica> replicaVec;
+	int portNum;
+	bool status;
+	std::string stuff;
 	
 public:
-	Manager();
+	Manager(const std::string& port, const std::string& stat);
 	void addUserFiles(const std::string& username);
 	std::string registerUser(const std::string& username, const std::string& password);
 	std::string loginUser(const std::string& username, const std::string& password);
@@ -54,8 +61,12 @@ public:
 	std::string numFollowers(const std::string& username);
 	void parseMessage2(const std::string& username, std::map<std::string, std::string>& myMap);
 	void aggregateFeed(const std::string& username, int connfd);
-	void connectServ(int connfd);
-	std::string requestHandler(const std::string& message, int connfd);
+	void connectServ(int connfd, const std::string& ipaddr);
+	bool sendAsClient(const std::string& request, const std::string& ipaddr, int port);
+	void sendToReplica(const std::string& request);
+	void changeIsUp(const std::string& request);
+	void changeStatus(const std::string& request);
+	std::string requestHandler(const std::string& message, int connfd, const std::string& ipaddr);
 };
 
 

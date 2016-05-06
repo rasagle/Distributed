@@ -24,9 +24,9 @@ using namespace std;
 
 int main(int argc, char **argv) {
     int			listenfd, connfd;  // Unix file descriptors
-    struct sockaddr_in	servaddr;          // Note C use of struct
+    struct sockaddr_in	servaddr, cliaddr;          // Note C use of struct
     char		buff[MAXLINE];
-    time_t		ticks;
+	socklen_t clilen;
 
     // 1. Create the socket
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
     servaddr.sin_family      = AF_INET; // Specify the family
     // use any network card present
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port        = htons(PORT_NUM);	// daytime server
+    servaddr.sin_port        = htons(atoi(argv[1]));	// daytime server
 
     // 3. "Bind" that address object to our listening file descriptor
     if (bind(listenfd, (SA *) &servaddr, sizeof(servaddr)) == -1) {
@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
         exit(3);
     }
     
-	Manager manager;
+	Manager manager(argv[1], argv[2]);
     for ( ; ; ) {
         // 5. Block until someone connects.
         //    We could provide a sockaddr if we wanted to know details of whom
@@ -65,13 +65,21 @@ int main(int argc, char **argv) {
         //    Last arg is where to put the size of the sockaddr if
         //    we asked for one
 		fprintf(stderr, "Ready to connect.\n");
-        if ((connfd = accept(listenfd, (SA *) NULL, NULL)) == -1) {
+		clilen = sizeof(cliaddr);
+        if ((connfd = accept(listenfd, (SA *) &cliaddr, &clilen)) == -1) {
             perror("accept failed");
             exit(4);
 		}
+		/*
+		printf("%d.%d.%d.%d\n",
+		  int(cliaddr.sin_addr.s_addr&0xFF),
+		  int((cliaddr.sin_addr.s_addr&0xFF00)>>8),
+		  int((cliaddr.sin_addr.s_addr&0xFF0000)>>16),
+		  int((cliaddr.sin_addr.s_addr&0xFF000000)>>24));*/
+		printf("%s\n", inet_ntoa(cliaddr.sin_addr));
 		fprintf(stderr, "Connected\n");
 		thread t1([&]{
-			manager.connectServ(connfd);
+			manager.connectServ(connfd, inet_ntoa(cliaddr.sin_addr));
 		});
 		t1.detach();
     }

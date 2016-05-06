@@ -1,9 +1,7 @@
 #include "backendmanager.h"
 using namespace std;
 
-Manager::Manager(){
-	lock_guard<mutex> lck(userBaseMut);
-	lock_guard<mutex> lck1(mapMut);
+Manager::Manager(const string& port, const string& stat){
 	ifstream ifs("userbase.txt");
 	string line;
 	while(getline(ifs, line)){
@@ -12,6 +10,25 @@ Manager::Manager(){
 		}
 	}
 	ifs.close();
+	
+	portNum = atoi(port.c_str());
+
+	if(port == "13002" && stat == "true"){
+		replicaVec.push_back(Replica(12002, false, true));
+		replicaVec.push_back(Replica(11002, false, true));
+		status = true;
+	}
+	else if(port == "12002" && stat == "false"){
+		replicaVec.push_back(Replica(13002, true, true));
+		replicaVec.push_back(Replica(11002, false, true));
+		status = false;
+	}
+	else if(port == "11002" && stat == "false"){
+		replicaVec.push_back(Replica(13002, true, true));
+		replicaVec.push_back(Replica(12002, false, true));
+		status = false;
+	}
+	
 }
 
 void Manager::addUserFiles(const string& username){
@@ -42,9 +59,11 @@ string Manager::registerUser(const string& username, const string& password){
 		ofs1 << username + "\n";
 		ofs1.close();
 		addUserFiles(username);
+		ifs.close();
 		return("Register successful");
 	}
 	else{
+		ifs.close();
 		return("Username already exists");
 	}
 }
@@ -72,14 +91,14 @@ string Manager::loginUser(const string& username, const string& password){
 
 void Manager::removeNameFromFile(const string& username, const string& filename){
 	//Removes an instance of the word from a file
-	ifstream ifs(filename);
+	ifstream ifs3(filename);
 	ofstream ofs(username + "temp.txt");
 	string line;
-	while(getline(ifs,line)){
+	while(getline(ifs3,line)){
 		if(line != username)
 			ofs << line + '\n';
 	}
-	ifs.close();
+	ifs3.close();
 	ofs.close();
 	remove(filename.c_str());
 	string tempName = username + "temp.txt";
@@ -89,7 +108,6 @@ void Manager::removeNameFromFile(const string& username, const string& filename)
 void Manager::removeFollowerInfo(const string& username){
 	//Goes into followers/followed files and removes the username
 	lock_guard<mutex> lck(mapMut);
-	
 	ifstream ifs(username + "_followed.txt");
 	string followedName;
 	//Goes into the follower's file and removes username
@@ -99,8 +117,9 @@ void Manager::removeFollowerInfo(const string& username){
 		lck2.unlock();
 	}
 	ifs.close();
+
 	//Goes into the followed file and removes username
-	ifstream ifs1(username + "_followed.txt");
+	ifstream ifs1(username + "_followers.txt");
 	string followerName;
 	while(getline(ifs1, followerName)){
 		unique_lock<mutex> lck3(*uMap[followerName]->followedMut);
@@ -248,7 +267,6 @@ void Manager::displayTweets(const string& username, int connfd){
 	parseMessage(username, vec);
 	lck1.unlock();
 	for(it = vec.rbegin(); it != vec.rend(); it++){
-		cout << *it << endl;
 		string line = *it + "~*~";
 		send(connfd, line.c_str(), strlen(line.c_str()), 0);
 	}
@@ -259,12 +277,10 @@ void Manager::tweet(const string& username, const string& date, const string& ti
 	unique_lock<mutex> lck(mapMut);
 	unique_lock<mutex> lck1(*uMap[username]->tweetMut);
 	lck.unlock();
-	
 	ofstream ofs(username + "_messages.txt", ofstream::app);
 	ofs << date + " " + time1 + " -- " + message + "\n";
 	ofs.close();
 	lck1.unlock();
-	displayTweets(username, connfd);
 }
 
 string Manager::numFollowers(const string& username){
@@ -278,11 +294,8 @@ string Manager::numFollowers(const string& username){
 	int count = 0;
 	while(getline(ifs,line))
 		++count;
-	stringstream ss;
 	ifs.close();
-	ss << count;
-	ss >> line;
-	return line;
+	return to_string(count);
 }
 
 void Manager::parseMessage2(const string& username, map<string, string>& myMap){
@@ -317,37 +330,125 @@ void Manager::aggregateFeed(const string& username, int connfd){
 	int count = 0;
 	for(it = myMap.rbegin(); it != myMap.rend(); it++){
 		if(count == 15) break;
-		cout << it->second << " " << it->first << endl;
 		string newMsg = it->second + " " + it->first + "~*~";
 		count++;
 		send(connfd, newMsg.c_str(), strlen(newMsg.c_str()), 0);
 	}	
 }
 
-void Manager::connectServ(int connfd){
+void Manager::connectServ(int connfd, const string& ipaddr){
 	char buff[MAXLINE];
 	char temp[MAXLINE];
 
 	// We had a connection.  Do whatever our task is.
 	recv(connfd, buff, sizeof(buff), 0);
-	std::string request = buff;
-	//std::string response = requestHandler(request, connfd);
-	string response = this->requestHandler(request, connfd);
+	string request = buff;
+	string response = this->requestHandler(request, connfd, ipaddr);
 	strcpy(temp, response.c_str());
 	send(connfd, temp, strlen(temp), 0);
-	//send(connfd, buff, strlen(buff), 0);
-	// 6. Close the connection with the current client and go back
-	//    for another.
 	memset(buff, 0, sizeof(buff));
 	memset(temp, 0, sizeof(temp));
 	close(connfd);
 }
 
-string Manager::requestHandler(const string& message, int connfd){
+bool Manager::sendAsClient(const string& request, const string& ipaddr, int port){
+	//sends a string to a server
+	int sockfd;
+	bool success = true;
+	struct sockaddr_in servaddr;
+	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+		perror("Unable to create a socket");
+		exit(1);
+	}
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family      = AF_INET; 
+	servaddr.sin_addr.s_addr = inet_addr(ipaddr.c_str());
+	servaddr.sin_port        = htons(port);
+
+	if((connect(sockfd, (SA *) &servaddr, sizeof(servaddr))) == -1) {
+		perror("Unable to connect to server");
+		success = false;
+	}
+	else{
+		send(sockfd, request.c_str(), strlen(request.c_str()), 0);
+	}
+	
+	close(sockfd);
+	return success;
+}
+
+void Manager::sendToReplica(const string& request){
+	//sends client's requets to other RMs if you are the primary
+	if(status == true){
+		bool success;
+		vector<int> portVec;
+		for(int i = 0; i < replicaVec.size(); ++i){
+			if(replicaVec[i].getIsUp()){
+				success = sendAsClient(request, "127.0.0.1", replicaVec[i].getPort());
+				if(!success){ 
+					replicaVec[i].changeIsUp(false);
+					portVec.push_back(replicaVec[i].getPort());
+				}
+			}
+		}
+		//Send the active RMs which servers have died
+		for(int i = 0; i < replicaVec.size(); ++i){
+			if(replicaVec[i].getIsUp()){
+				for(int j = 0; j < portVec.size(); ++j){
+					string req = "change_is_up " + to_string(portVec[j]);
+					sendAsClient(req, "127.0.0.1", replicaVec[i].getPort());
+				}
+			}
+		}
+	}
+}
+
+void Manager::changeIsUp(const string& request){
+	for(int i = 0; i < replicaVec.size(); ++i){
+		if(replicaVec[i].getPort() == atoi(request.c_str())){
+			replicaVec[i].changeIsUp(false);
+		}
+	}
+}
+
+void Manager::changeStatus(const string& request){
+	//Old primary is no longer the primary
+	for(int i = 0; i < replicaVec.size(); ++i){
+		if(replicaVec[i].getStatus()){
+			replicaVec[i].changeStatus(false);
+			replicaVec[i].changeIsUp(false);
+		}
+	}
+	//change yourself to primary
+	for(int i = 0; i < replicaVec.size(); ++i){
+		if(replicaVec[i].getPort() == atoi(request.c_str())){
+			replicaVec[i].changeStatus(true);
+		}
+	}
+	//if(portNum == atoi(request.c_str())) 
+		//status = true;
+}
+
+string Manager::requestHandler(const string& message, int connfd, const string& ipaddr){
 	//This handles all the use cases
 	string request;
 	istringstream iss(message);
 	iss >> request;
+	cout << message << endl;
+	
+	//If the incoming ipaddress is the frontend and you are not primary
+	if(ipaddr != "127.0.0.1" && status != true){
+		string req = "change_status " + to_string(portNum);
+		for(int i = 0; i < replicaVec.size(); ++i){
+			//change the original primary status to false
+			if(replicaVec[i].getStatus() == true){
+				replicaVec[i].changeStatus(false);
+				replicaVec[i].changeIsUp(false);
+			}
+			sendAsClient(req, "127.0.0.1", replicaVec[i].getPort());
+		}
+		status = true;
+	}
 	
 	if( request == "register" ){
 		string info;
@@ -355,6 +456,7 @@ string Manager::requestHandler(const string& message, int connfd){
 		int index = info.find('*');
 		string user = info.substr(0, index);
 		string pass = info.substr(index+1, info.size());
+		sendToReplica(message);
 		return registerUser(user, pass);
 	}
 	else if( request == "login" ){
@@ -369,6 +471,7 @@ string Manager::requestHandler(const string& message, int connfd){
 		string user;
 		iss >> user;
 		removeAccount(user);
+		sendToReplica(message);
 		return("Account removed");
 	}
 	else if( request == "find_everyone" ){
@@ -381,6 +484,7 @@ string Manager::requestHandler(const string& message, int connfd){
 		string currentUser, user;
 		iss >> currentUser >> user;
 		findPeople(currentUser, user);
+		sendToReplica(message);
 		return("Succesfully added");
 	}
 	else if( request == "get_unfollow_name" ){
@@ -393,6 +497,7 @@ string Manager::requestHandler(const string& message, int connfd){
 		string username, name;
 		iss >> username >> name;
 		unfollow(username, name);
+		sendToReplica(message);
 		return("Unfollowed");
 	}
 	else if( request == "view_followed" ){
@@ -413,13 +518,15 @@ string Manager::requestHandler(const string& message, int connfd){
 		return("Displayed Tweets");
 	}
 	else if( request == "tweet" ){
-		string user, date, time1, message, filler;
-		iss >> user >> date >> time1 >> message;
+		string user, date, time1, messages, filler;
+		iss >> user >> date >> time1 >> messages;
 		while(iss >> filler){
-			message += ' ';
-			message += filler;
+			messages += ' ';
+			messages += filler;
 		}
-		tweet(user, date, time1, message, connfd);
+		tweet(user, date, time1, messages, connfd);
+		sendToReplica(message);
+		if(status == true) displayTweets(user, connfd);
 		return("Tweeted");
 	}
 	else if( request == "num_followers" ){
@@ -427,10 +534,22 @@ string Manager::requestHandler(const string& message, int connfd){
 		iss >> user;
 		return numFollowers(user);
 	}
-	else if( request == "aggregate_feed"){
+	else if( request == "aggregate_feed" ){
 		string user;
 		iss >> user;
 		aggregateFeed(user, connfd);
 		return("Aggregate feed");
+	}
+	else if( request == "change_is_up" ){
+		string port;
+		iss >> port;
+		changeIsUp(port);
+		return("Is Up changed");
+	}
+	else if( request == "change_status" ){
+		string port;
+		iss >> port;
+		changeStatus(port);
+		return("Changed status");
 	}
 }
