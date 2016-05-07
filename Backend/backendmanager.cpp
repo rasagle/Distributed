@@ -395,7 +395,7 @@ void Manager::sendToReplica(const string& request){
 		for(int i = 0; i < replicaVec.size(); ++i){
 			if(replicaVec[i].getIsUp()){
 				for(int j = 0; j < portVec.size(); ++j){
-					string req = "change_is_up " + to_string(portVec[j]);
+					string req = "-1 change_is_up " + to_string(portVec[j]);
 					sendAsClient(req, "127.0.0.1", replicaVec[i].getPort());
 				}
 			}
@@ -404,6 +404,8 @@ void Manager::sendToReplica(const string& request){
 }
 
 void Manager::changeIsUp(const string& request){
+	//Change the status of the other RM to false
+	lock_guard<mutex> lck(vecMut);
 	for(int i = 0; i < replicaVec.size(); ++i){
 		if(replicaVec[i].getPort() == atoi(request.c_str())){
 			replicaVec[i].changeIsUp(false);
@@ -413,6 +415,7 @@ void Manager::changeIsUp(const string& request){
 
 void Manager::changeStatus(const string& request){
 	//Old primary is no longer the primary
+	lock_guard<mutex> lck(vecMut);
 	for(int i = 0; i < replicaVec.size(); ++i){
 		if(replicaVec[i].getStatus()){
 			replicaVec[i].changeStatus(false);
@@ -429,16 +432,35 @@ void Manager::changeStatus(const string& request){
 		//status = true;
 }
 
+void Manager::checkSequence(const string& seq){
+	//checks to see if the current message received is the next in the sequence
+	while(atoi(seq.c_str()) != (previousSeq + 1) && atoi(seq.c_str()) != -1){
+		this_thread::sleep_for(chrono::milliseconds(5));
+	}
+}
+
+void Manager::sendFiller(){
+	if(status == true){
+		for(int i = 0; i < replicaVec.size(); ++i){
+			if(replicaVec[i].getIsUp()){
+				string req = "-1 increase_seq";
+				sendAsClient(req, "127.0.0.1", replicaVec[i].getPort());
+			}
+		}
+	}
+}
+
 string Manager::requestHandler(const string& message, int connfd, const string& ipaddr){
 	//This handles all the use cases
-	string request;
+	string seq, request;
 	istringstream iss(message);
-	iss >> request;
+	iss >> seq >> request;
 	cout << message << endl;
 	
+	checkSequence(seq);
 	//If the incoming ipaddress is the frontend and you are not primary
 	if(ipaddr != "127.0.0.1" && status != true){
-		string req = "change_status " + to_string(portNum);
+		string req = "-1 change_status " + to_string(portNum);
 		for(int i = 0; i < replicaVec.size(); ++i){
 			//change the original primary status to false
 			if(replicaVec[i].getStatus() == true){
@@ -457,6 +479,7 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		string user = info.substr(0, index);
 		string pass = info.substr(index+1, info.size());
 		sendToReplica(message);
+		previousSeq++;
 		return registerUser(user, pass);
 	}
 	else if( request == "login" ){
@@ -465,6 +488,8 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		int index = info.find('*');
 		string user = info.substr(0, index);
 		string pass = info.substr(index+1, info.size());
+		sendFiller();
+		previousSeq++;
 		return loginUser(user, pass);
 	}
 	else if( request == "remove_account" ){
@@ -472,12 +497,15 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		iss >> user;
 		removeAccount(user);
 		sendToReplica(message);
+		previousSeq++;
 		return("Account removed");
 	}
 	else if( request == "find_everyone" ){
 		string user;
 		iss >> user;
 		findEveryone(user, connfd);
+		sendFiller();
+		previousSeq++;
 		return("Everyone found");
 	}
 	else if( request == "find_people" ){
@@ -485,12 +513,15 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		iss >> currentUser >> user;
 		findPeople(currentUser, user);
 		sendToReplica(message);
+		previousSeq++;
 		return("Succesfully added");
 	}
 	else if( request == "get_unfollow_name" ){
 		string user;
 		iss >> user;
 		getFollowNames(user, connfd);
+		sendFiller();
+		previousSeq++;
 		return("Unfollowers name");
 	}
 	else if( request == "unfollow" ){
@@ -498,23 +529,30 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		iss >> username >> name;
 		unfollow(username, name);
 		sendToReplica(message);
+		previousSeq++;
 		return("Unfollowed");
 	}
 	else if( request == "view_followed" ){
 		string user;
 		iss >> user;
 		getFollowNames(user, connfd);
+		sendFiller();
+		previousSeq++;
 		return("Followed names");
 	}
 	else if( request == "check_user_exists" ){
 		string user;
 		iss >> user;
+		sendFiller();
+		previousSeq++;
 		return checkUserExists(user);
 	}
 	else if( request == "display_tweets" ){
 		string user;
 		iss >> user;
 		displayTweets(user, connfd);
+		sendFiller();
+		previousSeq++;
 		return("Displayed Tweets");
 	}
 	else if( request == "tweet" ){
@@ -526,18 +564,23 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		}
 		tweet(user, date, time1, messages, connfd);
 		sendToReplica(message);
+		previousSeq++;
 		if(status == true) displayTweets(user, connfd);
 		return("Tweeted");
 	}
 	else if( request == "num_followers" ){
 		string user;
 		iss >> user;
+		sendFiller();
+		previousSeq++;
 		return numFollowers(user);
 	}
 	else if( request == "aggregate_feed" ){
 		string user;
 		iss >> user;
 		aggregateFeed(user, connfd);
+		sendFiller();
+		previousSeq++;
 		return("Aggregate feed");
 	}
 	else if( request == "change_is_up" ){
@@ -551,5 +594,10 @@ string Manager::requestHandler(const string& message, int connfd, const string& 
 		iss >> port;
 		changeStatus(port);
 		return("Changed status");
+	}
+	else if( request == "increase_seq" ){
+		//This is a filler for messages that don't alter files
+		previousSeq++;
+		return("");
 	}
 }

@@ -7,9 +7,13 @@ import socket
 app = Flask(__name__)
 
 ports = [13002, 12002, 11002]
+sequence = 0
 
 def connectSocket(request):
         '''connects to the socket'''
+        global sequence
+        sequence += 1
+        request = str(sequence) + " " + request
    	s = socket.socket()         	# Create a socket object
 	host = "192.81.212.251" 	# Where do you want to connect
 	#port = 13002                	# port to connect to
@@ -103,6 +107,9 @@ def remove_account():
 
 def find_everyone(request):
         '''Listens to socket for multiple packets and parses accordingly'''
+        global sequence
+        sequence += 1
+        request = str(sequence) + " " + request
         username = session['username']
         s = socket.socket()             
 	host = "192.81.212.251"         

@@ -36,11 +36,13 @@ class Manager{
 private:
 	std::mutex userBaseMut;
 	std::mutex mapMut;
+	std::mutex vecMut;
 	std::unordered_map<std::string, Person*> uMap;
 	std::vector<Replica> replicaVec;
 	int portNum;
 	bool status;
 	std::string stuff;
+	int previousSeq = 0;
 	
 public:
 	Manager(const std::string& port, const std::string& stat);
@@ -66,6 +68,8 @@ public:
 	void sendToReplica(const std::string& request);
 	void changeIsUp(const std::string& request);
 	void changeStatus(const std::string& request);
+	void checkSequence(const std::string& seq);
+	void sendFiller();
 	std::string requestHandler(const std::string& message, int connfd, const std::string& ipaddr);
 };
 
